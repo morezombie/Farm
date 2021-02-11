@@ -12,11 +12,17 @@ class Animal(object):
     feed_month = 0    # feeding cost per month
     observer = None   # the money observer
     matured_price = 0 # selling or buying price for big one
+    newborn = False
     def __init__(self, age_month):
+        if age_month == 0:
+            self.newborn = True
         self.age_month = age_month
     def register(self, observer):
         self.observer = observer
     def growup(self):
+        if self.newborn:    # skip its first grow
+            self.newborn = not self.newborn
+            return
         self.age_month += 1
         if self.observer:
             self.observer.onGrowConsume(self.feed_month)
@@ -103,16 +109,15 @@ class CounterClerk(object):
         pass
     def onGrowConsume(self, gold):
         self.money -= gold
-        print("feeding, cash -%d, $%d" % (gold, self.money))
+        print("[feeding] cash -%d, $%d" % (gold, self.money))
     def onBuy(self, gold):
         self.money -= gold
-        print("buying, cash -%d, $%d" % (gold, self.money))
+        print("[buying] cash -%d, $%d" % (gold, self.money))
     def onSell(self, gold):
         self.money += gold
-        print("selling, cash +%d, $%d" % (gold, self.money))
+        print("[selling] cash +%d, $%d" % (gold, self.money))
     def __init__(self, initmoney = 0):
         self.money = initmoney
-        self.annual_wealth.append(initmoney)
     def estimate(self, pack):
         gold = 0
         male = 0
@@ -122,7 +127,7 @@ class CounterClerk(object):
             # money aspect
             gold += obj.estimate()
             # animal statistics
-            print("obj age:%d price %d" % (obj.age_month, gold))
+            print("[estate] animal age:%d price %d" % (obj.age_month, obj.estimate()))
             if obj.isCub():
                 cub += 1
             elif obj.isMale:
@@ -133,31 +138,65 @@ class CounterClerk(object):
         self.annual_cub.append(cub)
         return gold
     def syncWallClock(self, month):
+        print("At the end of Month", month)
         self.month = month
     def book(self, pack):
         if (self.month % 12 == 0):
             estate = self.estimate(pack)
             wealth = self.money + estate
-            print("money %d and estate %d makes it %d" % (self.money, estate, wealth))
-            increase = wealth - self.annual_wealth[-1]
+            if self.annual_wealth:
+                increase = wealth - self.annual_wealth[-1]
+            else:
+                increase = 0
             self.annual_wealth.append(wealth)
             self.annual_increase.append(increase)
+            print("[estate] money %d and estate %d makes it %d" % (self.money, estate, wealth))
     def show(self):
         # TODO drawing annual data
         print('wealth: ', self.annual_wealth)
         print('increase: ', self.annual_increase)
         print('cub: ', self.annual_cub)
         print('female: ', self.annual_matured_female)
+        
+        years = len(self.annual_cub)
+        fig = plt.figure(figsize=(16,8))
+        numFig = fig.add_subplot(1,2,1)
+        numFig.plot(range(years), self.annual_matured_female, color='black', label='grow-up female')
+        numFig.plot(range(years), self.annual_cub, color='red', label='young cub')
+        numFig.legend(loc='upper left')
+        numFig.set_xlabel('year')
+        numFig.set_ylabel('number')
+        numFig.set_title('Yearly Number Of Animal')
+        plt.grid()
+        ecoFig = fig.add_subplot(1,2,2)
+        years = len(self.annual_wealth)
+        ecoFig.plot(range(years), self.annual_wealth, color='red', label='gross profit')
+        ecoFig.plot(range(years), self.annual_increase, color='blue', label='increased profit')
+        ecoFig.legend(loc='upper left')
+        ecoFig.set_xlabel('year')
+        ecoFig.set_ylabel('profit')
+        ecoFig.set_title('Yearly Profit of Animal')
+        plt.grid()
 
 class Farm(object):
     pack = []
     clerk = CounterClerk()
-    def addFemale(self, age):
-        obj = Female(age)
-        obj.register(self.clerk)
-        self.pack.append(obj)
+    def addFemale(self, age, num = 1, buying = True):
+        if not buying:
+            gold = 0
+        if age >= config.matured_month:
+            gold = config.price_matured_female
+        else:
+            gold = config.price_cub
+        for i in range (0, num):
+            obj = Female(age)
+            obj.register(self.clerk)
+            self.pack.append(obj)
+            self.clerk.onBuy(gold)
 
     def run(self, month):
+        self.clerk.syncWallClock(0)
+        self.clerk.book(self.pack)
         for m in range (1, month + 1):
             self.clerk.syncWallClock(m)
             for obj in self.pack:
